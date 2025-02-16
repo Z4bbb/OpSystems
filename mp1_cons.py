@@ -2,7 +2,7 @@ import random
 import time
 
 # Step 1: Generate a random number of resources (1-30)
-num_resources = random.randint(1, 5)
+num_resources = random.randint(1, 10)
 resources = [f"Resource {i+1}" for i in range(num_resources)]
 print(f"Random Resources: {num_resources}")
 print(f"Resources: {resources}")
@@ -51,11 +51,19 @@ while any(resource_status.values()) or any(resource_waiting.values()):  # Run un
                 resource_status[resource] = None
 
     # Step 5: Move waiting users to active users if space is available
-    for resource, waiting_list in list(resource_waiting.items()):
-        if not resource_status[resource] and waiting_list:
-            next_user, usage_time = waiting_list.pop(0)
-            print(f"➡️ {next_user} starts using {resource} for {usage_time} sec")
-            resource_status[resource] = (next_user, usage_time)
+    # for resource, waiting_list in list(resource_waiting.items()):
+    #     if not resource_status[resource] and waiting_list:
+    #         next_user, usage_time = waiting_list.pop(0)
+    #         print(f"➡️ {next_user} starts using {resource} for {usage_time} sec")
+    #         resource_status[resource] = (next_user, usage_time)
+
+    for user in users:
+        for resource, waiting_list in resource_waiting.items():
+            if not resource_status[resource] and waiting_list and waiting_list[0][0] == user:
+                next_user, usage_time = waiting_list.pop(0)
+                print(f"➡️ {next_user} starts using {resource} for {usage_time} sec")
+                resource_status[resource] = (next_user, usage_time)
+
 
     # Display resource status
     print("\n📌 Resource Status:")
