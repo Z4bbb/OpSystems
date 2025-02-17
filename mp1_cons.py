@@ -1,27 +1,27 @@
 import random
 import time
+import colorama
+from colorama import Fore, Back, Style
 
-# Step 1: Generate a random number of resources (1-30)
+colorama.init(autoreset=True)
+
+# Initialize resources and users
 num_resources = random.randint(1, 10)
-resources = [f"Resource {i+1}" for i in range(num_resources)]
 print(f"Random Resources: {num_resources}")
-print(f"Resources: {resources}")
+resources = [f"Resource {i+1}" for i in range(num_resources)]
 
-# Step 2: Generate a random number of users (1-30)
 num_users = random.randint(1, 10)
-users = [f"User {i+1}" for i in range(num_users)]
 print(f"Random Users: {num_users}")
-print(f"Users: {users}")
+users = [f"User {i+1}" for i in range(num_users)]
 
-# Step 3: Assign random resources and usage times to each user
-# Each user will request a random subset of resources in chronological order
+# Assign random resources and usage times to each user
+# Each user will request only one resource at a time
 user_resource_time = {
-    user: [(resource, random.randint(1, 15)) for resource in sorted(random.sample(resources, random.randint(1, len(resources))))] 
+    user: [(resource, random.randint(1, 15)) for resource in sorted(random.sample(resources, random.randint(1, len(resources))))]
     for user in users
 }
 
-
-# Print the generated user-resource-time assignments
+print(f"User Resource Requests: {user_resource_time}")
 print("\nUser Resource Requests:")
 for user, requests in user_resource_time.items():
     print(f"{user}: {requests}")
@@ -29,6 +29,7 @@ for user, requests in user_resource_time.items():
 # Initialize tracking dictionaries
 resource_status = {resource: None for resource in resources}  # Active user on resource (user, time_left)
 resource_waiting = {resource: [] for resource in resources}  # Waiting queue for each resource
+user_status = {user: None for user in users}  # Track which resource a user is currently using
 
 # Populate the waiting queues for each resource
 for user, requests in user_resource_time.items():
@@ -37,10 +38,12 @@ for user, requests in user_resource_time.items():
 
 # Simulation loop
 current_time = 0
+print(f"{Fore.RED}----------------------------------------------------------------------------------------------")
 while any(resource_status.values()) or any(resource_waiting.values()):  # Run until all resources are free
-    print(f"\n⏳ Time: {current_time} sec")
+    print(f"{Fore.RED}----------------------------------------------------------------------------------------------")
+    print(f"{Fore.WHITE}\n🕓 Time: {current_time} sec")
 
-    # Step 4: Decrement time for users currently using resources
+    # Step 1: Decrement time for users currently using resources
     for resource, user_info in list(resource_status.items()):
         if user_info:
             user, time_left = user_info
@@ -49,24 +52,23 @@ while any(resource_status.values()) or any(resource_waiting.values()):  # Run un
             else:
                 print(f"✅ {user} finished using {resource}")
                 resource_status[resource] = None
+                user_status[user] = None  # User is no longer using any resource
 
-    # Step 5: Move waiting users to active users if space is available
-    # for resource, waiting_list in list(resource_waiting.items()):
-    #     if not resource_status[resource] and waiting_list:
-    #         next_user, usage_time = waiting_list.pop(0)
-    #         print(f"➡️ {next_user} starts using {resource} for {usage_time} sec")
-    #         resource_status[resource] = (next_user, usage_time)
-
-    for user in users:
-        for resource, waiting_list in resource_waiting.items():
-            if not resource_status[resource] and waiting_list and waiting_list[0][0] == user:
-                next_user, usage_time = waiting_list.pop(0)
-                print(f"➡️ {next_user} starts using {resource} for {usage_time} sec")
-                resource_status[resource] = (next_user, usage_time)
-
+    # Step 2: Move waiting users to active users if space is available
+    for user in users: 
+        for resource, waiting_list in list(resource_waiting.items()):
+            if not resource_status[resource] and waiting_list:
+                # Find the next user in the waiting list who is not currently using any resource
+                for i, (next_user, usage_time) in enumerate(waiting_list):
+                    if user_status[next_user] is None:  # User is not using any resource
+                        waiting_list.pop(i)  # Remove the user from the waiting list
+                        print(f"➡️ {next_user} starts using {resource} for {usage_time} sec")
+                        resource_status[resource] = (next_user, usage_time)
+                        user_status[next_user] = resource  # Mark the user as using this resource
+                        break
 
     # Display resource status
-    print("\n📌 Resource Status:")
+    print(f"{Fore.BLUE}\n📌 Resource Status:{Back.RESET}")
     for resource, user_info in resource_status.items():
         if user_info:
             user, time_left = user_info
@@ -75,7 +77,7 @@ while any(resource_status.values()) or any(resource_waiting.values()):  # Run un
             print(f"{resource}: Free")
 
     # Display waiting users
-    print("\n⏳ Users in Waiting:")
+    print(f"{Fore.MAGENTA}\n⏳ Users in Waiting:{Back.RESET}")
     for resource, waiting_list in resource_waiting.items():
         if waiting_list:
             print(f"{resource}:")
@@ -87,7 +89,7 @@ while any(resource_status.values()) or any(resource_waiting.values()):  # Run un
                     start_time = 0  # Resource is free
                 print(f"- {user} is waiting, will start in {start_time} sec")
 
-    # Step 6: Calculate when resources will be free
+    # Step 3: Calculate when resources will be free
     resource_free_time = {}
     for resource, user_info in resource_status.items():
         if user_info:
@@ -101,12 +103,14 @@ while any(resource_status.values()) or any(resource_waiting.values()):  # Run un
             resource_free_time[resource] = 0  # Resource is already free
 
     # Display resource free times
-    print("\n✅ Resource Free Time:")
+    print(f"{Fore.GREEN}\n✅ Resource Free Time:{Back.RESET}")
     for resource, free_time in resource_free_time.items():
         if free_time > 0:
             print(f"{resource} will be free in {free_time} sec")
         else:
             print(f"{resource} is free")
+
+    print(f"{Fore.RED}----------------------------------------------------------------------------------------------")
 
     # Pause for realism
     time.sleep(1)
