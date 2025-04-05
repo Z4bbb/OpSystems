@@ -128,8 +128,8 @@ class Scheduler:
         
         # Calculate and display average metrics
         avg_waiting_time, avg_turnaround_time = self.calculate_statistics()
-        print(f"{Fore.GREEN}Average Waiting Time: {avg_waiting_time:.2f}")
-        print(f"{Fore.GREEN}Average Turnaround Time: {avg_turnaround_time:.2f}")
+        print(f"{Fore.GREEN}Average Waiting Time: {avg_waiting_time:.2f} ms")
+        print(f"{Fore.GREEN}Average Turnaround Time: {avg_turnaround_time:.2f} ms")
         
         # Display Gantt chart
         self.display_gantt_chart()
@@ -232,10 +232,12 @@ class Scheduler:
             })
             
             # Update waiting time (time spent waiting after arrival)
-            process.waiting_time = process.start_time - process.arrival_time
-            
+            # process.waiting_time = process.start_time - process.arrival_time
+            process.waiting_time = process.start_time 
+
             # Update turnaround time (finish time - arrival time)
-            process.turnaround_time = process.finish_time - process.arrival_time
+            # process.turnaround_time = process.finish_time - process.arrival_time
+            process.turnaround_time = process.finish_time
             
             current_time = process.finish_time
 
@@ -261,18 +263,29 @@ class Scheduler:
             })
             
             # Waiting time is simply the start time (since arrival time is 0)
-            process.waiting_time = process.start_time - process.arrival_time
+            # process.waiting_time = process.start_time - process.arrival_time
+            process.waiting_time = process.start_time 
             
             # Turnaround time is finish time (since arrival time is 0)
-            process.turnaround_time = process.finish_time - process.arrival_time
+            # process.turnaround_time = process.finish_time - process.arrival_time
+            process.turnaround_time = process.finish_time 
             
             current_time = process.finish_time
 
     def srpt(self):
         self.reset_processes()
         
-        # Create a copy of processes for sorting
-        remaining_processes = self.processes.copy()
+        # Create copies of processes manually
+        remaining_processes = []
+        for p in self.processes:
+            new_process = Process(
+                pid=p.pid,
+                arrival_time=p.arrival_time,
+                burst_time=p.burst_time
+            )
+            new_process.remaining_time = p.burst_time
+            new_process.start_time = -1  # Initialize to -1 (not started)
+            remaining_processes.append(new_process)
         
         # Sort by arrival time initially
         remaining_processes.sort(key=lambda p: p.arrival_time)
@@ -280,7 +293,7 @@ class Scheduler:
         current_time = 0
         completed_processes = 0
         ready_queue = []
-        last_process_id = -1  # Track the last executed process for Gantt chart
+        last_process_id = -1  # For Gantt chart
         
         while completed_processes < len(self.processes):
             # Add newly arrived processes to the ready queue
@@ -302,6 +315,10 @@ class Scheduler:
             # Get the process with the shortest remaining time
             current_process = ready_queue[0]
             
+            # Record start time if this is the first time the process runs
+            if current_process.start_time == -1:
+                current_process.start_time = current_time
+            
             # Check if we need to start a new segment in the Gantt chart
             if last_process_id != current_process.pid:
                 self.timeline.append({
@@ -311,16 +328,13 @@ class Scheduler:
                 })
                 last_process_id = current_process.pid
             
-            # Determine how long this process will run
-            # Either until completion or until a new process arrives
+            # Determine time slice (until completion or next arrival)
             time_slice = current_process.remaining_time
-            
             if remaining_processes:
                 next_arrival = remaining_processes[0].arrival_time
-                if next_arrival > current_time:
-                    time_slice = min(time_slice, next_arrival - current_time)
+                time_slice = min(time_slice, next_arrival - current_time)
             
-            # Update the process and current time
+            # Execute the process for the time slice
             current_process.remaining_time -= time_slice
             current_time += time_slice
             
@@ -330,126 +344,106 @@ class Scheduler:
             # If the process is complete, calculate its metrics
             if current_process.remaining_time == 0:
                 current_process.finish_time = current_time
-                current_process.turnaround_time = current_process.finish_time - current_process.arrival_time
-                current_process.waiting_time = current_process.turnaround_time - current_process.burst_time
+                current_process.turnaround_time = current_process.finish_time 
+                current_process.waiting_time = (current_process.turnaround_time - current_process.burst_time) - current_process.arrival_time
                 
-                ready_queue.pop(0)  # Remove the completed process
+                # Update the original process with the results
+                for original_p in self.processes:
+                    if original_p.pid == current_process.pid:
+                        original_p.start_time = current_process.start_time
+                        original_p.finish_time = current_process.finish_time
+                        original_p.turnaround_time = current_process.turnaround_time
+                        original_p.waiting_time = current_process.waiting_time
+                        break
+                
+                ready_queue.pop(0)
                 completed_processes += 1
-                last_process_id = -1  # Reset for Gantt chart tracking
+                last_process_id = -1
     
     def priority(self):
         self.reset_processes()
         
-        # Create a copy of processes
-        remaining_processes = self.processes.copy()
-        
-        # Sort by arrival time initially
-        remaining_processes.sort(key=lambda p: p.arrival_time)
+        # Create a copy of processes and sort by priority (lower number = higher priority)
+        remaining_processes = sorted(self.processes.copy(), key=lambda p: p.priority)
         
         current_time = 0
         completed_processes = 0
-        ready_queue = []
         
         while completed_processes < len(self.processes):
-            # Add newly arrived processes to the ready queue
-            while remaining_processes and remaining_processes[0].arrival_time <= current_time:
-                process = remaining_processes.pop(0)
-                ready_queue.append(process)
+            if not remaining_processes:
+                break  # No more processes
             
-            if not ready_queue:
-                # If no process is ready, advance time to the next arrival
-                if remaining_processes:
-                    current_time = remaining_processes[0].arrival_time
-                    continue
-                else:
-                    break  # No more processes
+            # Get the highest priority process (first in the sorted list)
+            current_process = remaining_processes.pop(0)
             
-            # Sort the ready queue by priority (lower value = higher priority)
-            ready_queue.sort(key=lambda p: p.priority)
+            # Set start time (since arrival time is ignored)
+            current_process.start_time = current_time
             
-            # Get the process with the highest priority
-            current_process = ready_queue.pop(0)
+            # Execute the entire process (non-preemptive)
+            execution_time = current_process.burst_time
             
-            # If this process hasn't started yet, record its start time
-            if current_process.start_time == 0 and not current_process.executed:
-                current_process.start_time = current_time
-                current_process.executed = True
-            
-            # Update timeline for Gantt chart
-            self.timeline.append({
-                'pid': current_process.pid,
-                'start': current_time,
-                'end': current_time + current_process.remaining_time
-            })
-            
-            # Execute the entire process
-            current_time += current_process.remaining_time
-            current_process.remaining_time = 0
-            
-            # Update finish time and calculate metrics
-            current_process.finish_time = current_time
-            current_process.turnaround_time = current_process.finish_time - current_process.arrival_time
-            current_process.waiting_time = current_process.turnaround_time - current_process.burst_time
-            
-            completed_processes += 1
-    
-    def round_robin(self, quantum=4):
-        self.reset_processes()
-        
-        # Create a copy of processes
-        process_queue = deque(sorted(self.processes, key=lambda p: p.arrival_time))
-        
-        current_time = 0
-        completed_processes = 0
-        ready_queue = deque()
-        
-        while completed_processes < len(self.processes) or ready_queue:
-            # Add newly arrived processes to the ready queue
-            while process_queue and process_queue[0].arrival_time <= current_time:
-                ready_queue.append(process_queue.popleft())
-            
-            if not ready_queue:
-                # If no process is ready, advance time to the next arrival
-                if process_queue:
-                    current_time = process_queue[0].arrival_time
-                    continue
-                else:
-                    break  # No more processes
-            
-            # Get the next process from the ready queue
-            current_process = ready_queue.popleft()
-            
-            # If the process is executing for the first time, set its start time
-            if not current_process.executed:
-                current_process.start_time = current_time
-                current_process.executed = True
-            
-            # Determine execution time for this quantum
-            execution_time = min(quantum, current_process.remaining_time)
-            
-            # Update timeline for Gantt chart
+            # Update timeline
             self.timeline.append({
                 'pid': current_process.pid,
                 'start': current_time,
                 'end': current_time + execution_time
             })
             
-            # Update process and current time
+            current_time += execution_time
+            
+            # Update process completion details
+            current_process.finish_time = current_time
+            current_process.remaining_time = 0
+            
+            # Waiting time = start_time (since arrival_time is ignored)
+            current_process.waiting_time = current_process.start_time
+            
+            # Turnaround time = finish_time (since arrival_time is ignored)
+            current_process.turnaround_time = current_process.finish_time
+            
+            completed_processes += 1
+        
+
+    def round_robin(self, quantum):
+        self.reset_processes()
+        
+        # Create a queue of processes (ignoring arrival time)
+        ready_queue = deque(self.processes.copy())
+        current_time = 0
+        completed_processes = 0
+        
+        while completed_processes < len(self.processes):
+            if not ready_queue:
+                break  # No more processes to execute
+            
+            current_process = ready_queue.popleft()
+            
+            # Set start time if this is the first execution
+            if current_process.start_time == -1:  # Assuming reset sets to -1
+                current_process.start_time = current_time
+            
+            # Execute for the quantum time or remaining time (whichever is smaller)
+            execution_time = min(quantum, current_process.remaining_time)
+            
+            # Record in timeline
+            self.timeline.append({
+                'pid': current_process.pid,
+                'start': current_time,
+                'end': current_time + execution_time
+            })
+            
+            # Update process and time
             current_process.remaining_time -= execution_time
             current_time += execution_time
             
-            # Add any newly arrived processes during this quantum
-            while process_queue and process_queue[0].arrival_time <= current_time:
-                ready_queue.append(process_queue.popleft())
-            
-            # Check if the process is complete
+            # Check if process completed
             if current_process.remaining_time == 0:
                 current_process.finish_time = current_time
-                current_process.turnaround_time = current_process.finish_time - current_process.arrival_time
+                current_process.turnaround_time = current_process.finish_time  # Since arrival time is ignored
                 current_process.waiting_time = current_process.turnaround_time - current_process.burst_time
                 completed_processes += 1
             else:
-                # If not complete, put it back in the ready queue
+                # Put back in queue if not finished
                 ready_queue.append(current_process)
 
 def main():
@@ -460,7 +454,7 @@ def main():
         print(f"{Fore.CYAN}========================{Style.RESET_ALL}")
         print("1. Load batch1.txt")
         print("2. Load batch2.txt")
-        print("3. Convert TXT to CSV")
+        print("3. Load quiz.txt")
         print("4. Exit")
         
         file_choice = input(f"{Fore.GREEN}Enter your choice (1-4): {Style.RESET_ALL}")
@@ -468,15 +462,17 @@ def main():
         if file_choice == '4':
             print("Exiting the program.")
             break
-        elif file_choice == '3':
-            txt_file = input("Enter TXT filename to convert: ")
-            csv_file = input("Enter CSV output filename: ")
-            scheduler.convert_to_csv(txt_file, csv_file)
-            continue
+        # elif file_choice == '3':
+        #     txt_file = input("Enter TXT filename to convert: ")
+        #     csv_file = input("Enter CSV output filename: ")
+        #     scheduler.convert_to_csv(txt_file, csv_file)
+        #     continue
         elif file_choice == '1':
             file_name = "batch1.txt"
         elif file_choice == '2':
             file_name = "batch2.txt"
+        elif file_choice == "3":
+            file_name = "quiz.txt"
         else:
             print(f"{Fore.RED}Invalid choice. Please try again.{Style.RESET_ALL}")
             continue
@@ -495,7 +491,7 @@ def main():
             print("2. Shortest Job First (SJF)")
             print("3. Shortest Remaining Processing Time (SRPT)")
             print("4. Priority Scheduling")
-            print("5. Round-Robin (quantum = 4ms)")
+            print("5. Round-Robin")
             print("6. Back to File Selection")
             
             algo_choice = input(f"{Fore.GREEN}Enter your choice (1-6): {Style.RESET_ALL}")
@@ -517,7 +513,8 @@ def main():
                 scheduler.priority()
                 scheduler.display_results("Priority Scheduling")
             elif algo_choice == '5':
-                scheduler.round_robin(4)
+                quantum_time = int(input("Quantum Time: "))
+                scheduler.round_robin(quantum_time)
                 scheduler.display_results("Round-Robin (quantum = 4ms)")
             else:
                 print(f"{Fore.RED}Invalid choice. Please try again.{Style.RESET_ALL}")
