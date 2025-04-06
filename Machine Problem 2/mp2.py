@@ -79,24 +79,6 @@ class Scheduler:
             
         return True
 
-    def convert_to_csv(self, txt_filename, csv_filename):
-        with open(txt_filename, 'r') as txt_file:
-            # Skip the header line in the txt file
-            lines = txt_file.readlines()[1:]
-            
-            with open(csv_filename, 'w', newline='') as csv_file:
-                csv_writer = csv.writer(csv_file)
-                # Write the header row to CSV
-                csv_writer.writerow(['Process', 'Arrival', 'CPU Burst Time', 'Priority'])
-                
-                for line in lines:
-                    values = line.strip().split()
-                    if len(values) >= 4:
-                        csv_writer.writerow([values[0], values[1], values[2], values[3]])
-        
-        print(f"Converted {txt_filename} to {csv_filename}")
-        return True
-
     def reset_processes(self):
         for process in self.processes:
             process.reset()
@@ -114,7 +96,7 @@ class Scheduler:
 
     def display_job_order(self):
         """Display the full job execution order including repeats (especially for RR, SRPT)."""
-        if not self.timeline:
+        if not self.timeline: #exit if list is empty
             return
 
         # Show all execution segments in order
@@ -325,10 +307,8 @@ class Scheduler:
                 else:
                     break  # No more processes
             
-            # Sort the ready queue by remaining time
+            # Sort the ready queue by remaining time, get the process with the shortest remaining time
             ready_queue.sort(key=lambda p: p.remaining_time)
-            
-            # Get the process with the shortest remaining time
             current_process = ready_queue[0]
             
             # Record start time if this is the first time the process runs
@@ -336,6 +316,7 @@ class Scheduler:
                 current_process.start_time = current_time
             
             # Check if we need to start a new segment in the Gantt chart
+            #If a new process starts or preempts the old one, start a new segment in the chart.
             if last_process_id != current_process.pid:
                 self.timeline.append({
                     'pid': current_process.pid,
@@ -348,6 +329,7 @@ class Scheduler:
             time_slice = current_process.remaining_time
             if remaining_processes:
                 next_arrival = remaining_processes[0].arrival_time
+                #Adjust the time slice if a new process is about to arrive
                 time_slice = min(time_slice, next_arrival - current_time)
             
             # Execute the process for the time slice
@@ -379,7 +361,7 @@ class Scheduler:
     def priority(self):
         self.reset_processes()
         
-        # Create a copy of processes and sort by priority (lower number = higher priority)
+        # a copy of processes and sort by priority (lower number = higher priority)
         remaining_processes = sorted(self.processes.copy(), key=lambda p: p.priority)
         
         current_time = 0
@@ -455,7 +437,7 @@ class Scheduler:
             # Check if process completed
             if current_process.remaining_time == 0:
                 current_process.finish_time = current_time
-                current_process.turnaround_time = current_process.finish_time  # Since arrival time is ignored
+                current_process.turnaround_time = current_process.finish_time  
                 current_process.waiting_time = current_process.turnaround_time - current_process.burst_time
                 completed_processes += 1
             else:
@@ -478,11 +460,6 @@ def main():
         if file_choice == '4':
             print("Exiting the program.")
             break
-        # elif file_choice == '3':
-        #     txt_file = input("Enter TXT filename to convert: ")
-        #     csv_file = input("Enter CSV output filename: ")
-        #     scheduler.convert_to_csv(txt_file, csv_file)
-        #     continue
         elif file_choice == '1':
             file_name = "batch1.txt"
         elif file_choice == '2':
