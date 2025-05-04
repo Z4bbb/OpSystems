@@ -1,325 +1,360 @@
-"""
-Memory Management and Allocation Strategies Simulation
-This program simulates three memory allocation strategies (First-fit, Worst-fit, Best-fit)
-using an event-driven approach for a fixed partition multiprogramming system.
-"""
-
-import heapq
-from collections import defaultdict
-import copy
-
-class MemoryBlock:
-    """Represents a memory partition in the system"""
-    def __init__(self, block_id, size):
-        self.id = block_id
-        self.size = size
-        self.available = True
-        self.job = None
-        self.usage_count = 0
-        self.fragmentation = 0
-    
-    def allocate(self, job):
-        """Allocate this block to a job"""
-        self.available = False
-        self.job = job
-        self.usage_count += 1
-        self.fragmentation = self.size - job.size
-        return True
-    
-    def release(self):
-        """Release this block when job completes"""
-        self.available = True
-        self.job = None
-
 class Job:
-    """Represents a job to be executed"""
-    def __init__(self, job_id, execution_time, size):
-        self.id = job_id
-        self.execution_time = execution_time
+    """
+    Represents a job with its attributes.
+    """
+    def __init__(self, id, arrival_time, size, execution_time):
+        """
+        Initializes a Job object.
+        """
+        self.id = id
+        self.arrival_time = arrival_time
         self.size = size
-        self.arrival_time = 0  # All jobs arrive at time 0 in this simulation
+        self.execution_time = execution_time
+        self.remaining_time = execution_time  # Track remaining time separately from execution_time
         self.start_time = None
-        self.completion_time = None
+        self.finish_time = None
         self.waiting_time = 0
 
-class Event:
-    """Represents an event in the simulation"""
-    JOB_ARRIVAL = 0
-    JOB_COMPLETION = 1
-    
-    def __init__(self, time, job, event_type):
-        self.time = time
-        self.job = job
-        self.event_type = event_type
-    
-    def __lt__(self, other):
-        """For priority queue comparison"""
-        return self.time < other.time
+    def __str__(self):
+        return f"Job {self.id} (Size: {self.size}, Time: {self.remaining_time}/{self.execution_time})"
 
-class MemoryAllocationSimulator:
-    """Event-driven simulator for memory allocation strategies"""
-    def __init__(self, strategy_name):
-        self.strategy_name = strategy_name
-        self.current_time = 0
-        self.jobs = []
-        self.memory_blocks = []
-        self.event_queue = []
-        self.waiting_queue = []
-        self.completed_jobs = []
-        
-        # Statistics tracking
-        self.queue_length_samples = []
-        self.waiting_times = []
-        self.total_fragmentation = 0
-        self.block_usage = defaultdict(int)
-    
-    def initialize(self, jobs_data, memory_data):
-        """Initialize the simulation with jobs and memory blocks"""
-        # Create jobs
-        self.jobs = [Job(job_id, time, size) for job_id, time, size in jobs_data]
-        
-        # Create memory blocks
-        self.memory_blocks = [MemoryBlock(block_id, size) for block_id, size in memory_data]
-        
-        # For best-fit, sort memory blocks by size
-        if self.strategy_name == "Best-fit":
-            self.memory_blocks = sorted(self.memory_blocks, key=lambda block: block.size)
-        
-        # Initialize event queue with all job arrivals at time 0
-        for job in self.jobs:
-            heapq.heappush(self.event_queue, Event(0, job, Event.JOB_ARRIVAL))
-    
-    def allocate_memory_first_fit(self, job):
-        """First-fit allocation strategy"""
-        for block in self.memory_blocks:
-            if block.available and block.size >= job.size:
-                return block
-        return None
-    
-    def allocate_memory_best_fit(self, job):
-        """Best-fit allocation strategy (assumes memory blocks are sorted by size)"""
-        best_block = None
-        best_fit_size = float('inf')
-        
-        for block in self.memory_blocks:
-            if block.available and block.size >= job.size:
-                if block.size - job.size < best_fit_size:
-                    best_fit_size = block.size - job.size
-                    best_block = block
-        
-        return best_block
-    
-    def allocate_memory_worst_fit(self, job):
-        """Worst-fit allocation strategy"""
-        worst_block = None
-        worst_fit_size = -1
-        
-        for block in self.memory_blocks:
-            if block.available and block.size >= job.size:
-                if block.size - job.size > worst_fit_size:
-                    worst_fit_size = block.size - job.size
-                    worst_block = block
-        
-        return worst_block
-    
-    def allocate_memory(self, job):
-        """Allocate memory using the selected strategy"""
-        block = None
-        
-        if self.strategy_name == "First-fit":
-            block = self.allocate_memory_first_fit(job)
-        elif self.strategy_name == "Best-fit":
-            block = self.allocate_memory_best_fit(job)
-        elif self.strategy_name == "Worst-fit":
-            block = self.allocate_memory_worst_fit(job)
-        
-        if block:
-            # Update job and block status
-            block.allocate(job)
-            job.start_time = self.current_time
-            job.completion_time = self.current_time + job.execution_time
-            
-            # Schedule job completion event
-            heapq.heappush(self.event_queue, Event(job.completion_time, job, Event.JOB_COMPLETION))
-            
-            # Record fragmentation
-            self.total_fragmentation += block.fragmentation
-            
-            # Record block usage
-            self.block_usage[block.id] += 1
-            
-            # Record waiting time
-            self.waiting_times.append(job.waiting_time)
-            
+
+class MemoryBlock:
+    """
+    Represents a memory block with its attributes.
+    """
+    def __init__(self, id, size):
+        """
+        Initializes a MemoryBlock object.
+        """
+        self.id = id
+        self.size = size
+        self.is_allocated = False
+        self.allocated_job = None
+
+    def __str__(self):
+        if self.is_allocated:
+            used_space = self.allocated_job.size
+            remaining_space = self.size - used_space
+            return f"Memory {self.id} (Size: {self.size}, Used: {used_space}, Free: {remaining_space})"
+        else:
+            return f"Memory {self.id} (Size: {self.size}, Free: {self.size})"
+
+
+def initialize_jobs():
+    """
+    Initializes a list of Job objects based on the provided data.
+    """
+    jobs_data = [
+        {"id": 1, "arrival_time": 0, "size": 5760, "execution_time": 5},
+        {"id": 2, "arrival_time": 0, "size": 4190, "execution_time": 4},
+        {"id": 3, "arrival_time": 0, "size": 3290, "execution_time": 8},
+        {"id": 4, "arrival_time": 0, "size": 2030, "execution_time": 2},
+        {"id": 5, "arrival_time": 0, "size": 2550, "execution_time": 2},
+        {"id": 6, "arrival_time": 0, "size": 6990, "execution_time": 6},
+        {"id": 7, "arrival_time": 0, "size": 8940, "execution_time": 8},
+        {"id": 8, "arrival_time": 0, "size": 740, "execution_time": 10},
+        {"id": 9, "arrival_time": 0, "size": 3930, "execution_time": 7},
+        {"id": 10, "arrival_time": 0, "size": 6890, "execution_time": 6},
+        {"id": 11, "arrival_time": 0, "size": 6580, "execution_time": 5},
+        {"id": 12, "arrival_time": 0, "size": 3820, "execution_time": 8},
+        {"id": 13, "arrival_time": 0, "size": 9140, "execution_time": 9},
+        {"id": 14, "arrival_time": 0, "size": 420, "execution_time": 10},
+        {"id": 15, "arrival_time": 0, "size": 220, "execution_time": 10},
+        {"id": 16, "arrival_time": 0, "size": 7540, "execution_time": 7},
+        {"id": 17, "arrival_time": 0, "size": 3210, "execution_time": 3},
+        {"id": 18, "arrival_time": 0, "size": 1380, "execution_time": 1},
+        {"id": 19, "arrival_time": 0, "size": 9850, "execution_time": 9},
+        {"id": 20, "arrival_time": 0, "size": 3610, "execution_time": 3},
+        {"id": 21, "arrival_time": 0, "size": 7540, "execution_time": 7},
+        {"id": 22, "arrival_time": 0, "size": 2710, "execution_time": 2},
+        {"id": 23, "arrival_time": 0, "size": 8390, "execution_time": 8},
+        {"id": 24, "arrival_time": 0, "size": 5950, "execution_time": 5},
+        {"id": 25, "arrival_time": 0, "size": 760, "execution_time": 10}
+    ]
+    return [Job(**data) for data in jobs_data]
+
+
+def initialize_memory_blocks():
+    """
+    Initializes a list of MemoryBlock objects based on the provided data.
+    """
+    memory_data = [
+        {"id": 1, "size": 9500},
+        {"id": 2, "size": 7000},
+        {"id": 3, "size": 4500},
+        {"id": 4, "size": 8500},
+        {"id": 5, "size": 3000},
+        {"id": 6, "size": 9000},
+        {"id": 7, "size": 1000},
+        {"id": 8, "size": 5500},
+        {"id": 9, "size": 1500},
+        {"id": 10, "size": 500}
+    ]
+    return [MemoryBlock(**data) for data in memory_data]
+
+
+def first_fit(job, memory_blocks):
+    """
+    Allocates memory to a job using the First-Fit algorithm.
+    """
+    for i, block in enumerate(memory_blocks):
+        if not block.is_allocated and block.size >= job.size:
+            allocate_block(job, block)
             return True
-        
-        return False
+    return False
+
+
+def worst_fit(job, memory_blocks):
+    """
+    Allocates memory to a job using the Worst-Fit algorithm.
+    """
+    best_block_index = None
+    max_diff = -1
+    for i, block in enumerate(memory_blocks):
+        if not block.is_allocated and block.size >= job.size:
+            diff = block.size - job.size
+            if diff > max_diff:
+                max_diff = diff
+                best_block_index = i
+    if best_block_index is not None:
+        allocate_block(job, memory_blocks[best_block_index])
+        return True
+    return False
+
+
+def best_fit(job, memory_blocks):
+    """
+    Allocates memory to a job using the Best-Fit algorithm.
+    """
+    best_block_index = None
+    min_diff = float('inf')
+    for i, block in enumerate(memory_blocks):
+        if not block.is_allocated and block.size >= job.size:
+            diff = block.size - job.size
+            if diff < min_diff:
+                min_diff = diff
+                best_block_index = i
+    if best_block_index is not None:
+        allocate_block(job, memory_blocks[best_block_index])
+        return True
+    return False
+
+
+def allocate_block(job, block):
+    """
+    Allocates a memory block to a job.
+    """
+    block.is_allocated = True
+    block.allocated_job = job
+    job.start_time = current_time
+    print(f"Time {current_time}s: Allocated Job {job.id} to Memory Block {block.id}")
+
+
+def process_jobs(memory_blocks, completed_jobs):
+    """
+    Process jobs in memory and return completed jobs.
+    """
+    internal_fragmentation = 0
     
-    def process_job_arrival(self, event):
-        """Process a job arrival event"""
-        job = event.job
-        
-        # Try to allocate memory
-        if not self.allocate_memory(job):
-            # If allocation fails, put job in waiting queue
-            self.waiting_queue.append(job)
-        
-        # Record current queue length
-        self.queue_length_samples.append(len(self.waiting_queue))
-    
-    def process_job_completion(self, event):
-        """Process a job completion event"""
-        job = event.job
-        
-        # Find and release the memory block
-        for block in self.memory_blocks:
-            if not block.available and block.job == job:
-                block.release()
-                break
-        
-        # Add job to completed list
-        self.completed_jobs.append(job)
-        
-        # Try to allocate memory to waiting jobs
-        self.try_allocate_waiting_jobs()
-        
-        # Record current queue length
-        self.queue_length_samples.append(len(self.waiting_queue))
-    
-    def try_allocate_waiting_jobs(self):
-        """Try to allocate memory to jobs in the waiting queue"""
-        allocated_indices = []
-        
-        for i, job in enumerate(self.waiting_queue):
-            # Update waiting time for this job
-            job.waiting_time += self.current_time - job.arrival_time
+    # Process running jobs
+    for block in memory_blocks:
+        if block.is_allocated:
+            job = block.allocated_job
+            job.remaining_time -= 1
             
-            if self.allocate_memory(job):
-                allocated_indices.append(i)
-        
-        # Remove allocated jobs from waiting queue (in reverse order)
-        for i in sorted(allocated_indices, reverse=True):
-            self.waiting_queue.pop(i)
-        
-        # Update waiting time for remaining jobs
-        for job in self.waiting_queue:
-            job.arrival_time = self.current_time  # Reset arrival time for waiting time calculation
+            # Check if job has completed
+            if job.remaining_time == 0:
+                job.finish_time = current_time
+                print(f"Time {current_time}s: Job {job.id} completed. Releasing Memory Block {block.id}")
+                
+                # Calculate internal fragmentation for this job
+                fragment = block.size - job.size
+                internal_fragmentation += fragment
+                
+                # Add to completed jobs
+                completed_jobs.append(job)
+                
+                # Release memory block
+                block.is_allocated = False
+                block.allocated_job = None
     
-    def run(self):
-        """Run the simulation until all jobs are completed"""
-        while self.event_queue or self.waiting_queue:
-            if not self.event_queue:
-                # If no more events but jobs are waiting, advance time to next possible allocation
-                # (This would happen in a real system when a job completes)
-                self.current_time += 1
-                self.try_allocate_waiting_jobs()
+    return internal_fragmentation
+
+
+def print_memory_status(memory_blocks):
+    """
+    Print the current status of all memory blocks.
+    """
+    print("\nCurrent Memory Status:")
+    for block in memory_blocks:
+        if block.is_allocated:
+            job = block.allocated_job
+            print(f"  Block {block.id} ({block.size}): Job {job.id} ({job.size}) - {job.remaining_time}s remaining")
+        else:
+            print(f"  Block {block.id} ({block.size}): Free")
+
+
+def run_simulation(jobs, memory_blocks, allocation_strategy):
+    """
+    Runs the memory management simulation with a given allocation strategy.
+    """
+    global current_time
+    current_time = 0
+    
+    job_queue = jobs.copy()
+    waiting_jobs = []
+    completed_jobs = []
+    never_allocated_jobs = []
+    
+    total_internal_fragmentation = 0
+    peak_queue_length = 0
+    
+    strategy_name = allocation_strategy.__name__.replace('_', ' ').title()
+    print(f"\n{'='*50}")
+    print(f"Starting {strategy_name} Simulation")
+    print(f"{'='*50}")
+
+    MAX_SIMULATION_TIME = 10000
+
+    # Continue simulation until all jobs are completed
+    while job_queue or waiting_jobs or any(block.is_allocated for block in memory_blocks):
+        print(f"\nTime: {current_time}s")
+        
+        # 1. Update waiting time for jobs in waiting queue
+        for job in waiting_jobs:
+            job.waiting_time += 1
+        
+        # 2. Process jobs in memory and handle completed jobs
+        internal_frag = process_jobs(memory_blocks, completed_jobs)
+        total_internal_fragmentation += internal_frag
+        
+        # 3. Try to allocate waiting jobs
+        waiting_jobs_copy = waiting_jobs.copy()
+        for job in waiting_jobs_copy:
+            if allocation_strategy(job, memory_blocks):
+                waiting_jobs.remove(job)
+                print(f"Time {current_time}s: Allocated waiting Job {job.id}")
+        
+        # 4. Handle arriving jobs
+        arrived_jobs = [job for job in job_queue if job.arrival_time <= current_time]
+        for job in arrived_jobs:
+            job_queue.remove(job)
+            if not can_be_allocated(job, memory_blocks):
+                print(f"Job {job.id} is too large for any memory block and will never be allocated.")
+                never_allocated_jobs.append(job)
                 continue
-            
-            # Get next event
-            event = heapq.heappop(self.event_queue)
-            
-            # Update current time
-            self.current_time = event.time
-            
-            # Process event based on type
-            if event.event_type == Event.JOB_ARRIVAL:
-                self.process_job_arrival(event)
-            else:  # JOB_COMPLETION
-                self.process_job_completion(event)
-            
-            # Update waiting time for all jobs in queue
-            for job in self.waiting_queue:
-                job.waiting_time += 1
-    
-    def get_results(self):
-        """Calculate and return performance metrics"""
-        if not self.completed_jobs:
-            return {
-                "strategy": self.strategy_name,
-                "error": "No jobs completed"
-            }
+            if allocation_strategy(job, memory_blocks):
+                print(f"Time {current_time}s: Job {job.id} arrived and was allocated immediately")
+            else:
+                waiting_jobs.append(job)
+                print(f"Time {current_time}s: Job {job.id} arrived and was added to waiting queue")
         
-        total_simulation_time = max(job.completion_time for job in self.completed_jobs)
+        # 5. Track peak queue length
+        peak_queue_length = max(peak_queue_length, len(waiting_jobs))
         
-        # Calculate throughput
-        throughput = len(self.completed_jobs) / total_simulation_time if total_simulation_time > 0 else 0
+        # 6. Print current memory status
+        if any(block.is_allocated for block in memory_blocks) or waiting_jobs:
+            print_memory_status(memory_blocks)
+            if waiting_jobs:
+                print(f"Waiting Queue: {[f'Job {j.id}' for j in waiting_jobs]}")
         
-        # Calculate average queue length
-        avg_queue_length = sum(self.queue_length_samples) / len(self.queue_length_samples) if self.queue_length_samples else 0
+        # 7. Advance time if there's still work to do
+        current_time += 1
         
-        # Calculate average waiting time
-        avg_waiting_time = sum(self.waiting_times) / len(self.waiting_times) if self.waiting_times else 0
+        # Optional: Add a time limit to prevent infinite loops
+        if current_time > MAX_SIMULATION_TIME:
+            print("Simulation time limit reached. Some jobs may not have completed.")
+            break
+
+    # Calculate statistics
+    total_jobs = len(completed_jobs)
+    if total_jobs > 0:
+        total_turnaround_time = sum(job.finish_time - job.arrival_time for job in completed_jobs)
+        total_waiting_time = sum(job.waiting_time for job in completed_jobs)
         
-        # Calculate average internal fragmentation
-        avg_fragmentation = self.total_fragmentation / len(self.completed_jobs) if self.completed_jobs else 0
+        avg_turnaround_time = total_turnaround_time / total_jobs
+        avg_waiting_time = total_waiting_time / total_jobs
+        avg_internal_fragmentation = total_internal_fragmentation / total_jobs
+        throughput = total_jobs / current_time if current_time > 0 else 0
         
-        # Calculate memory block utilization
-        unused_blocks = sum(1 for block_id in range(1, len(self.memory_blocks) + 1) if self.block_usage[block_id] == 0)
-        unused_percentage = (unused_blocks / len(self.memory_blocks)) * 100
+        # Print statistics
+        print(f"\n{'='*50}")
+        print(f"{strategy_name} Simulation Results:")
+        print(f"{'='*50}")
+        print(f"Simulation ended at time: {current_time}s")
+        print(f"Total jobs completed: {total_jobs}")
+        print(f"Average waiting time: {avg_waiting_time:.2f}s")
+        print(f"Average turnaround time: {avg_turnaround_time:.2f}s")
+        print(f"Throughput: {throughput:.4f} jobs/s")
+        print(f"Average internal fragmentation: {avg_internal_fragmentation:.2f} bytes per job")
+        print(f"Peak waiting queue length: {peak_queue_length}")
         
-        heavily_used_threshold = len(self.jobs) / 10  # Define "heavily used" as being used for >10% of jobs
-        heavily_used_blocks = sum(1 for usage in self.block_usage.values() if usage > heavily_used_threshold)
-        heavily_used_percentage = (heavily_used_blocks / len(self.memory_blocks)) * 100
+        if waiting_jobs:
+            print(f"\nJobs still waiting at end of simulation: {[job.id for job in waiting_jobs]}")
+        if never_allocated_jobs:
+            print(f"\nJobs that could never be allocated: {[job.id for job in never_allocated_jobs]}")
+        incomplete_jobs = [block.allocated_job for block in memory_blocks if block.is_allocated]
+        if incomplete_jobs:
+            print(f"\nJobs still running at end of simulation: {[job.id for job in incomplete_jobs]}")
+        
+        for job in completed_jobs:
+            print(f"Job {job.id}: Waiting Time = {job.waiting_time}, Completion Time = {job.finish_time}")
         
         return {
-            "strategy": self.strategy_name,
-            "completed_jobs": len(self.completed_jobs),
-            "total_simulation_time": total_simulation_time,
-            "throughput": throughput,
-            "avg_queue_length": avg_queue_length,
+            "strategy": strategy_name,
             "avg_waiting_time": avg_waiting_time,
-            "avg_fragmentation": avg_fragmentation,
-            "unused_blocks_percentage": unused_percentage,
-            "heavily_used_blocks_percentage": heavily_used_percentage,
-            "block_usage": dict(self.block_usage)
+            "avg_turnaround_time": avg_turnaround_time,
+            "throughput": throughput,
+            "avg_internal_fragmentation": avg_internal_fragmentation,
+            "peak_queue_length": peak_queue_length
         }
+    else:
+        print("No jobs completed in simulation")
+        return None
 
-def run_simulations():
-    """Run simulations for all three allocation strategies"""
-    # Job data format: [job_id, execution_time, size]
-    job_data = [
-        [1, 5, 5760], [2, 4, 4190], [3, 8, 3290], [4, 2, 2030], [5, 2, 2550],
-        [6, 6, 6990], [7, 8, 8940], [8, 10, 740], [9, 7, 3930], [10, 6, 6890],
-        [11, 5, 6580], [12, 8, 3820], [13, 9, 9140], [14, 10, 420], [15, 10, 220],
-        [16, 7, 7540], [17, 3, 3210], [18, 1, 1380], [19, 9, 9850], [20, 3, 3610],
-        [21, 7, 7540], [22, 2, 2710], [23, 8, 8390], [24, 5, 5950], [25, 10, 760]
-    ]
-    
-    # Memory data format: [block_id, size]
-    memory_data = [
-        [1, 9500], [2, 7000], [3, 4500], [4, 8500], [5, 3000],
-        [6, 9000], [7, 1000], [8, 5500], [9, 1500], [10, 500]
-    ]
-    
-    # Run simulations for all three strategies
-    strategies = ["First-fit", "Worst-fit", "Best-fit"]
-    results = []
-    
-    for strategy in strategies:
-        simulator = MemoryAllocationSimulator(strategy)
-        simulator.initialize(job_data, memory_data)
-        simulator.run()
-        results.append(simulator.get_results())
-    
-    return results
 
-def print_results(results):
-    """Print formatted simulation results"""
-    print("\n===== MEMORY ALLOCATION SIMULATION RESULTS =====\n")
+def compare_strategies(results):
+    """
+    Compare the results of different allocation strategies.
+    """
+    print("\n" + "="*60)
+    print("Strategy Comparison")
+    print("="*60)
+    
+    headers = ["Strategy", "Avg Wait", "Avg Turnaround", "Throughput", "Internal Frag", "Peak Queue"]
+    print(f"{headers[0]:<15} {headers[1]:<10} {headers[2]:<15} {headers[3]:<12} {headers[4]:<15} {headers[5]:<10}")
+    print("-"*60)
     
     for result in results:
-        print(f"Strategy: {result['strategy']}")
-        print(f"Completed Jobs: {result['completed_jobs']}")
-        print(f"Total Simulation Time: {result['total_simulation_time']}")
-        print(f"Throughput: {result['throughput']:.4f} jobs per time unit")
-        print(f"Average Queue Length: {result['avg_queue_length']:.2f}")
-        print(f"Average Waiting Time: {result['avg_waiting_time']:.2f} time units")
-        print(f"Average Internal Fragmentation: {result['avg_fragmentation']:.2f} memory units")
-        print(f"Unused Blocks: {result['unused_blocks_percentage']:.2f}%")
-        print(f"Heavily Used Blocks: {result['heavily_used_blocks_percentage']:.2f}%")
-        print(f"Block Usage: {result['block_usage']}")
-        print("\n" + "="*50 + "\n")
+        if result:
+            print(f"{result['strategy']:<15} {result['avg_waiting_time']:<10.2f} "
+                  f"{result['avg_turnaround_time']:<15.2f} {result['throughput']:<12.4f} "
+                  f"{result['avg_internal_fragmentation']:<15.2f} {result['peak_queue_length']:<10}")
+
+
+def can_be_allocated(job, memory_blocks):
+    return any(block.size >= job.size for block in memory_blocks)
+
 
 if __name__ == "__main__":
-    results = run_simulations()
-    print_results(results)
+    current_time = 0
+    results = []
+    
+    # Run First-Fit Simulation
+    jobs = initialize_jobs()
+    memory_blocks = initialize_memory_blocks()
+    results.append(run_simulation(jobs, memory_blocks, first_fit))
+    
+    # Run Worst-Fit Simulation
+    jobs = initialize_jobs()
+    memory_blocks = initialize_memory_blocks()
+    results.append(run_simulation(jobs, memory_blocks, worst_fit))
+    
+    # Run Best-Fit Simulation
+    jobs = initialize_jobs()
+    memory_blocks = initialize_memory_blocks()
+    results.append(run_simulation(jobs, memory_blocks, best_fit))
+    
+    # Compare strategies
+    compare_strategies(results)
